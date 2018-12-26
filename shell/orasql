@@ -1,3 +1,4 @@
+#!/bin/bash
 if [ -z $ORACLE_HOME ]; then
 	echo "SET ORACLE_HOME"
 	exit 1
