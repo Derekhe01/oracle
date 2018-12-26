@@ -78,7 +78,7 @@ echo "tabstat       tab_name [owner]           : show if table statistics is exp
 echo "temp                                     : show temp segment usage"
 echo "topcpu        [n]                        : Top n cpu sql from ps, default n is 1"
 echo "topmem        [n]                        : Top n mem sql from ps, default n is 1"
-echo "trigger       trigger name [owner]       : show trigger source code"
+echo "trigger       trigger_name [owner]       : show trigger source code"
 echo "unusable                                 : show unusable indexes"
 echo "undo                                     : show undo usage"
 echo "user                                     : show user information"
@@ -119,8 +119,9 @@ $SQLPLUS -s /nolog<<EOF
 exit;
 EOF
 ;;
+;;
 
-alter)
+alert)
 $SQLPLUS -s /nolog<<EOF
  $LOGIN;
  set line 200 pages 2000
@@ -168,33 +169,33 @@ select 'Shared pool' name,(select sum(bytes/1024/1024) from v\$sgastat where poo
 (select bytes/1024/1024 from v\$sgastat where name='free memory' and pool='shared pool') free from dual)
 union
 select name,round(total,2)total,round(total-free,2) used,round(free,2) free,round((total-free)/total,2) pctused from (
-select 'Default pool' name,( select a.cnum_repl*(select value from v\$parameter where name='db_block_size')/1024/1024 total from x$kcbwds a, v\$buffer_pool p
+select 'Default pool' name,( select a.cnum_repl*(select value from v\$parameter where name='db_block_size')/1024/1024 total from x\$kcbwds a, v\$buffer_pool p
   where a.set_id=p.LO_SETID and p.name='DEFAULT' and p.block_size=(select value from v\$parameter where name='db_block_size')) total,
-(select a.anum_repl*(select value from v\$parameter where name='db_block_size')/1024/1024 free from x$kcbwds a, v\$buffer_pool p
+(select a.anum_repl*(select value from v\$parameter where name='db_block_size')/1024/1024 free from x\$kcbwds a, v\$buffer_pool p
 where a.set_id=p.LO_SETID and p.name='DEFAULT' and p.block_size=(select value from v\$parameter where name='db_block_size')) free from dual)
 union
   select name,nvl(round(total,2),0)total,nvl(round(total-free,2),0) used,nvl(round(free,2),0) free,nvl(round((total-free)/total,2),0) pctused from (
-select 'KEEP pool' name,(select a.cnum_repl*(select value from v\$parameter where name='db_block_size')/1024/1024 total from x$kcbwds a, v\$buffer_pool p
+select 'KEEP pool' name,(select a.cnum_repl*(select value from v\$parameter where name='db_block_size')/1024/1024 total from x\$kcbwds a, v\$buffer_pool p
   where a.set_id=p.LO_SETID and p.name='KEEP' and p.block_size=(select value from v\$parameter where name='db_block_size')) total,
-(select a.anum_repl*(select value from v\$parameter where name='db_block_size')/1024/1024 free from x$kcbwds a, v\$buffer_pool p
+(select a.anum_repl*(select value from v\$parameter where name='db_block_size')/1024/1024 free from x\$kcbwds a, v\$buffer_pool p
 where a.set_id=p.LO_SETID and p.name='KEEP' and p.block_size=(select value from v\$parameter where name='db_block_size')) free from dual)
 union
 select name,nvl(round(total,2),0)total,nvl(round(total-free,2),0) used,nvl(round(free,2),0) free,nvl(round((total-free)/total,2),0) pctused from (
-select 'RECYCLE pool' name,( select a.cnum_repl*(select value from v\$parameter where name='db_block_size')/1024/1024 total from x$kcbwds a, v\$buffer_pool p
+select 'RECYCLE pool' name,( select a.cnum_repl*(select value from v\$parameter where name='db_block_size')/1024/1024 total from x\$kcbwds a, v\$buffer_pool p
   where a.set_id=p.LO_SETID and p.name='RECYCLE' and p.block_size=(select value from v\$parameter where name='db_block_size')) total,
-(select a.anum_repl*(select value from v\$parameter where name='db_block_size')/1024/1024 free from x$kcbwds a, v\$buffer_pool p
+(select a.anum_repl*(select value from v\$parameter where name='db_block_size')/1024/1024 free from x\$kcbwds a, v\$buffer_pool p
 where a.set_id=p.LO_SETID and p.name='RECYCLE' and p.block_size=(select value from v\$parameter where name='db_block_size')) free from dual)
 union
 select name,nvl(round(total,2),0)total,nvl(round(total-free,2),0) used,nvl(round(free,2),0) free,nvl(round((total-free)/total,2),0) pctused from(
-select 'DEFAULT 16K buffer cache' name,(select a.cnum_repl*16/1024 total from x$kcbwds a, v\$buffer_pool p
+select 'DEFAULT 16K buffer cache' name,(select a.cnum_repl*16/1024 total from x\$kcbwds a, v\$buffer_pool p
   where a.set_id=p.LO_SETID and p.name='DEFAULT' and p.block_size=16384) total,
-  (select a.anum_repl*16/1024 free from x$kcbwds a, v\$buffer_pool p
+  (select a.anum_repl*16/1024 free from x\$kcbwds a, v\$buffer_pool p
 where a.set_id=p.LO_SETID and p.name='DEFAULT' and p.block_size=16384) free from dual)
 union
 select name,nvl(round(total,2),0)total,nvl(round(total-free,2),0) used,nvl(round(free,2),0) free,nvl(round((total-free)/total,2),0) pctused from(
-select 'DEFAULT 32K buffer cache' name,(select a.cnum_repl*32/1024 total from x$kcbwds a, v\$buffer_pool p
+select 'DEFAULT 32K buffer cache' name,(select a.cnum_repl*32/1024 total from x\$kcbwds a, v\$buffer_pool p
   where a.set_id=p.LO_SETID and p.name='DEFAULT' and p.block_size=32768) total,
-  (select a.anum_repl*32/1024 free from x$kcbwds a, v\$buffer_pool p
+  (select a.anum_repl*32/1024 free from x\$kcbwds a, v\$buffer_pool p
 where a.set_id=p.LO_SETID and p.name='DEFAULT' and p.block_size=32768) free from dual)
 union
 select name,total,total-free used,free, (total-free)/total*100 pctused from (
@@ -338,7 +339,7 @@ $SQLPLUS -s /nolog<<EOF
  name,
  DATATYPE_STRING,
  nvl(VALUE_STRING,anydata.AccessTimestamp(VALUE_ANYDATA)) val
- from DBA_HIST_SQLBING
+ from DBA_HIST_SQLBIND
  where sql_id = :SQL_ID
  and LAST_CAPTURED > sysdate - 1/24
  order by LAST_CAPTURED;
@@ -447,7 +448,7 @@ $SQLPLUS -s /nolog<<EOF
  col owner for a10
  col what for a40
  
- select owner,job_name,job_action,nex_run_date,enabled from dba_scheduler_jobs;
+ select owner,job_name,job_action,next_run_date,enabled from dba_scheduler_jobs;
  
  select schema_user as owner,job,what,to_char(next_date,'yyyy-mm-dd hh24:mi:ss') as next_date,broken,interval,failures from dba_jobs order by schema_user,what;
  
@@ -637,7 +638,7 @@ SELECT   D.TABLESPACE_NAME,
               FROM   V\$TEMP_SPACE_HEADER
           GROUP BY   TABLESPACE_NAME) F
  WHERE   D.TABLESPACE_NAME = F.TABLESPACE_NAME(+) 
-ORDER BY   1;
+ORDER BY  1;
 exit;
 EOF
 ;;
@@ -947,7 +948,7 @@ col username for a20
 set line 200 pages  5000
 select owner,db_link,username,host,created from dba_db_links;
 
-select DB_LINK,LOGGED_ON,OPEN_CURSORS,IN_TRANSACTION,UPDATE_SENT,COMMIT_POINT_STRENGTH from v\$db_link;
+select DB_LINK,LOGGED_ON,OPEN_CURSORS,IN_TRANSACTION,UPDATE_SENT,COMMIT_POINT_STRENGTH from v\$dblink;
 exit;
 EOF
 ;;
@@ -1164,7 +1165,7 @@ select d.value || '/' || lower(rtrim(i.instance, chr(0))) || '_ora_' ||
           from v\$thread t, v\$parameter v
          where v.name = 'thread'
            and (t.THREAD# = to_number(v.VALUE))) i,
-       (select value from v$parameter where name = 'user_dump_dest') d;
+       (select value from v\$parameter where name = 'user_dump_dest') d;
 exit;
 EOF
 ;;
@@ -1321,7 +1322,7 @@ $SQLPLUS -s /nolog<<EOF
 $LOGIN
 set line 200
 col username for a15
-select username,account_status,to_char(lock_date,'yyyy-mm-dd hh24:mi:ss') lock_date,to_char(created,'yyyy-mm-dd hh24:mi:dd') created,default_tablespace,temporary_tablespace from dba_users where rownum<10 order by created;
+select username,account_status,to_char(lock_date,'yyyy-mm-dd hh24:mi:ss') lock_date,to_char(created,'yyyy-mm-dd hh24:mi:dd') created,default_tablespace,temporary_tablespace from dba_users order by created;
 exit;
 EOF
 ;;
