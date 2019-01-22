@@ -1134,7 +1134,7 @@ select 'grant '||tt.privilege||' on '||owner||'.'||table_name||' to '||tt.grante
 from dba_tab_privs tt where tt.grantee=(upper('$USER'))
 union all
 select 'alter user '||tt.user_name||' quota '||maxblocks*blocksize||' on '||ts_name||';'
-from KU$_TSQUOTA_VIEW tt where tt.user_name=(upper('$USER'));
+from KU\$_TSQUOTA_VIEW tt where tt.user_name=(upper('$USER'));
 exit;
 EOF
 ;;
