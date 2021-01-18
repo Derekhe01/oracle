@@ -1,0 +1,932 @@
+# 默认asm磁盘以/dev/sd开头, sdb,sdc,sdd为 OCR盘 至少2G , /dev/sde 归档盘 至少10G /dev/sdf 数据盘 至少20G 
+# 安装目录/u01至少20G
+# 如果需要其他命名规则的磁盘, 需要修改脚本
+# 下面9个文件放到/soft下面
+# oracle安装需要的rpm包
+# /soft/compat-libstdc++-33-3.2.3-72.el7.x86_64.rpm
+# /soft/cvuqdisk-1.0.10-1.rpm
+# /soft/rlwrap-0.42-1.el6.x86_64.rpm
+# asm需要的rpm包
+# /soft/oracleasmlib-2.0.12-1.el7.x86_64.rpm
+# /soft/oracleasm-support-2.1.11-2.el7.x86_64.rpm
+# 19.3介质
+# /soft/LINUX.X64_193000_db_home.zip
+# /soft/LINUX.X64_193000_grid_home.zip
+# 19.6 Ru包
+# /soft/p30501910_190000_Linux-x86-64.zip
+# 19c opatch包
+# /soft/p6880880_190000_Linux-x86-64.zip
+# 脚本放到保存到/soft/install.sh
+# 脚本执行sh -x install.sh>install.log 2>error.log
+
+
+# 系统用户密码
+export PASSWORD=abcd1234
+# 数据库密码
+export ORACLEPASSWORD=abcd1234
+# NTP服务器
+export NTPSERVER=192.168.247.1
+# 设置数据库名称
+export DB_NAME=test
+# gbk字符集
+export CHARACTERSET=ZHS16GBK
+# utf8字符集
+# export CHARACTERSET=AL32UTF8
+# 软件安装目录 /u01
+export BASEDIR=/u01
+# 是否开启PDB True/False
+export PDBMODE=True
+######## 下面参数不需要修改 ########
+export IP=`ip a|grep -v -E "127|169"|grep -w inet|awk '{print $2}'|awk -F '/' '{print $1}'`
+export IPCOUNT=`echo $IP|awk -F '.' '{print NF-1}'`
+export MEM_SIZE=`free -m | grep Mem | awk '{print  $2}'`
+# 数据库内存为系统内存60% SGA是45% PGA是15%
+export SGA_SIZE=$(($MEM_SIZE*45/100))
+export PGA_SIZE=$(($MEM_SIZE*15/100))
+export DB_CACHE_SIZE=$(($SGA_SIZE/2))
+export SP_SIZE=$(($SGA_SIZE*15/100))
+export CURDATE==`date +%Y%m%d`
+# 开启大页
+# export HUGE_SIZE=$((MEM_SIZE/4))
+export SHMMAX=$((MEM_SIZE*1024*1024*7/10))
+export SHMALL=$((SHMMAX/4096))
+
+
+# 检查IP，必须IP为一个xxx.xxx.xxx.xxx, 如果取出多个IP就报错退出
+checkIP(){
+if [ $IPCOUNT -ne 3 ];then
+    echo -e "\n\e[1;31m The IP is in the wrong format, please set it correctly \e[0m"
+    exit 1
+fi
+}
+
+# 检查用户，如果非root用户执行，就退出
+isRoot()
+{
+if [ $USER != "root" ];then
+    echo -e "\n\e[1;31m the user must be root,and now you user is $USER,please su to root. \e[0m"
+    exit 1
+fi
+}
+
+# 检查/soft下面是否有下面文件，如果不存在，就退出
+checkFile()
+{
+if [ ! -f /soft/compat-libstdc++-33-3.2.3-72.el7.x86_64.rpm ]; then
+    echo -e "\n\e[1;31m compat-libstdc++-33-3.2.3-72.el7.x86_64.rpm not exist. \e[0m"
+    exit 1
+fi
+
+if [ ! -f /soft/cvuqdisk-1.0.10-1.rpm ]; then
+    echo -e "\n\e[1;31m cvuqdisk-1.0.10-1.rpm not exist. \e[0m"
+    exit 1
+fi
+
+if [ ! -f /soft/LINUX.X64_193000_db_home.zip ]; then
+    echo -e "\n\e[1;31m LINUX.X64_193000_db_home.zip not exist. \e[0m"
+    exit 1
+fi
+
+if [ ! -f /soft/LINUX.X64_193000_grid_home.zip ]; then
+    echo -e "\n\e[1;31m LINUX.X64_193000_grid_home.zip not exist. \e[0m"
+    exit 1
+fi
+
+if [ ! -f /soft/oracleasmlib-2.0.12-1.el7.x86_64.rpm ]; then
+    echo -e "\n\e[1;31m oracleasmlib-2.0.12-1.el7.x86_64.rpm not exist. \e[0m"
+    exit 1
+fi
+
+if [ ! -f /soft/oracleasm-support-2.1.11-2.el7.x86_64.rpm ]; then
+    echo -e "\n\e[1;31m oracleasm-support-2.1.11-2.el7.x86_64.rpm not exist. \e[0m"
+    exit 1
+fi
+
+if [ ! -f /soft/p30501910_190000_Linux-x86-64.zip ]; then
+    echo -e "\n\e[1;31m p30501910_190000_Linux-x86-64.zip not exist. \e[0m"
+    exit 1
+fi
+
+if [ ! -f /soft/p6880880_190000_Linux-x86-64.zip ]; then
+    echo -e "\n\e[1;31m p6880880_190000_Linux-x86-64.zip not exist. \e[0m"
+    exit 1
+fi
+
+if [ ! -f /soft/rlwrap-0.42-1.el6.x86_64.rpm ]; then
+    echo -e "\n\e[1;31m rlwrap-0.42-1.el6.x86_64.rpm not exist. \e[0m"
+    exit 1
+fi
+}
+
+# 挂载镜像，失败就退出
+mountCdrom()
+{
+mount -t auto -o ro /dev/cdrom /mnt
+if [ "`ls -A /mnt`" = "" ]; then
+    echo -e "\n\e[1;31m cdrom is empty,please insert rhel iamge to first. \e[0m"
+    exit 1
+fi
+
+if [ -f "/etc/yum.repos.d/Server.repo" ];then
+mv /etc/yum.repos.d/Server.repo /etc/yum.repos.d/Server.repo.bak
+fi
+
+cat >> /etc/yum.repos.d/Server.repo <<EOF
+[Server]
+name=MyRPM
+baseurl=file:///mnt/
+enabled=1
+gpgcheck=0
+#gpgkey=file:///mnt/RPM-GPG-KEY-redhat-release
+EOF
+}
+
+# 检查oracle相关用户，以及目录，报错退出
+checkUserinfo()
+{
+if id oracle >/dev/null 2>&1; then
+    echo -e "\n\e[1;31m user oracle already exists \e[0m"
+    exit 1
+fi
+
+if id grid >/dev/null 2>&1; then
+    echo -e "\n\e[1;31m user grid already exists \e[0m"
+    exit 1
+fi
+    
+if [ -d $BASEDIR ]; then
+    echo -e "\n\e[1;31m directory $BASEDIR already exists, Please confirm if $BASEDIR is empty \e[0m"
+    exit 1
+fi
+
+groupadd -g 501 oinstall
+groupadd -g 502 dba
+groupadd -g 503 asmadmin
+groupadd -g 504 oper
+useradd -u 501 -g oinstall -G dba,asmadmin grid
+useradd -u 502 -g oinstall -G oinstall,dba,oper oracle
+echo $PASSWORD |passwd oracle --stdin
+echo $PASSWORD |passwd grid --stdin
+
+# 设置用户过期时间 9999天
+chage -M 9999 oracle
+chage -M 9999 grid
+
+cat >> /home/grid/.bash_profile <<EOF
+export ORACLE_BASE=${BASEDIR}/app/grid
+export ORACLE_SID=+ASM
+export ORACLE_HOME=${BASEDIR}/app/19.0/grid
+export NLS_LANG=AMERICAN_AMERICA.AL32UTF8
+export PATH=\$ORACLE_HOME/bin:\$ORACLE_HOME/OPatch:\$PATH
+alias sqlplus='rlwrap sqlplus'
+alias asmcmd='rlwrap asmcmd'
+umask 022
+EOF
+
+cat >> /home/oracle/.bash_profile <<EOF
+export ORACLE_BASE=${BASEDIR}/app/oracle
+export ORACLE_SID=${DB_NAME}
+export ORACLE_HOME=${BASEDIR}/app/oracle/product/19.0/db_1
+export NLS_LANG=AMERICAN_AMERICA.AL32UTF8
+#export LANG=zh_CN.gbk
+export PATH=\$ORACLE_HOME/bin:\$ORACLE_HOME/OPatch:\$PATH
+export LD_LIBRARY_PATH=\$ORACLE_HOME/lib:$ORACLE_HOME/lib32
+alias tf="tailf ${BASEDIR}/app/oracle/diag/rdbms/${DB_NAME}/${DB_NAME}/trace/alert_${DB_NAME}.log"
+alias sqlplus='rlwrap sqlplus'
+alias rman='rlwrap rman'
+umask 022
+EOF
+
+mkdir -p $BASEDIR/app/oraInventory
+chown -R grid:oinstall $BASEDIR/app/oraInventory
+chmod -R 775 $BASEDIR/app/oraInventory
+mkdir -p $BASEDIR/app/grid
+chown -R grid:oinstall $BASEDIR/app/grid
+chmod -R 775 $BASEDIR/app/grid
+mkdir -p $BASEDIR/app/19.0/grid
+chown -R grid:oinstall $BASEDIR/app/19.0/grid
+chmod -R 775 $BASEDIR/app/19.0/grid
+mkdir -p $BASEDIR/app/oracle
+chown -R oracle:oinstall $BASEDIR/app/oracle
+chmod -R 775 $BASEDIR/app/oracle
+mkdir -p $BASEDIR/app/oracle/product/19.0/db_1
+chown -R oracle:oinstall $BASEDIR/app/oracle/product/19.0/db_1
+chmod -R 775 $BASEDIR/app/oracle/product/19.0/db_1
+}
+
+# 关闭相关服务，以及内核参数修改
+serviceCheck()
+{
+systemctl disable firewalld
+systemctl disable avahi-dnsconfd
+systemctl disable avahi-daemon
+systemctl disable cups
+systemctl disable postfix
+systemctl disable smartd
+sed -i 's/SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
+setenforce 0 
+
+echo "NOZEROCONF=yes" >> /etc/sysconfig/network
+# 关闭thp numa
+sed -i 's/quiet/quiet transparent_hugepage=never numa=off/' /etc/default/grub
+grub2-mkconfig -o /boot/grub2/grub.cfg
+
+cp /etc/hosts /etc/hosts.$CURDATE
+cat >> /etc/hosts <<EOF
+$IP $HOSTNAME
+EOF
+
+cp /etc/security/limits.conf /etc/security/limits.conf.$CURDATE
+cat >> /etc/security/limits.conf <<EOF
+oracle   soft   nofile    131072
+oracle   hard   nofile    131072
+oracle   soft   nproc    131072
+oracle   hard   nproc    131072
+oracle   soft   stack    10240
+oracle   hard   stack    32768
+oracle   soft   core    unlimited
+oracle   hard   core    unlimited
+oracle   soft   memlock    unlimited
+oracle   hard   memlock    unlimited
+grid   soft   nofile    131072
+grid   hard   nofile    131072
+grid   soft   nproc    131072
+grid   hard   nproc    131072
+grid   soft   stack    10240
+grid   hard   stack    32768
+grid   soft   core    unlimited
+grid   hard   core    unlimited
+grid   soft   memlock    unlimited
+grid   hard   memlock    unlimited
+EOF
+
+if [ -f /etc/security/limits.d/90-nproc.conf ]; then
+    cp /etc/security/limits.d/90-nproc.conf /etc/security/limits.d/90-nproc.conf.$CURDATE
+fi
+
+cat >> /etc/security/limits.d/90-nproc.conf <<EOF
+grid soft nproc 131072
+grid hard nproc 131072
+oracle soft nproc 131072
+oracle hard nproc 131072
+EOF
+
+cat >> /etc/pam.d/login <<EOF
+session required pam_limits.so
+EOF
+
+cat >> /etc/sysctl.conf <<EOF
+kernel.msgmni = 2878
+kernel.msgmnb = 65536
+kernel.shmmax = $SHMMAX
+kernel.shmall = $SHMALL
+kernel.shmmni = 4096
+kernel.sem = 250 32000 100 128
+fs.file-max = 6815744
+fs.aio-max-nr = 4194304
+net.ipv4.ip_local_port_range = 9000 65500
+net.core.rmem_default = 262144
+net.core.rmem_max = 4194304
+net.core.wmem_default = 262144
+net.core.wmem_max = 1048576
+vm.min_free_kbytes = 524288
+vm.swappiness = 10
+vm.dirty_background_ratio = 3
+vm.dirty_ratio = 80
+vm.dirty_expire_centisecs = 500
+vm.dirty_writeback_centisecs = 100
+net.ipv4.ipfrag_high_thresh = 16777216
+net.ipv4.ipfrag_low_thresh = 15728640
+kernel.randomize_va_space = 0
+kernel.panic_on_oops = 1
+EOF
+sysctl -p
+}
+
+# 安装rpm包
+rpmInstall()
+{
+yum install -y cpp* compat-libstdc++-33* gcc-* gcc-c++* glibc-* compat-libcap*  glibc-*  ntp kmod-oracleasm smartmontools python-rtslib \
+python-configshell glibc-devel-* ksh libgcc-* libstdc++-* libstdc++-devel-* libaio-* libaio-devel-* make-* sysstat-* binutils-* elfutils-libelf-devel-* \
+targetcli nfs-utils net-tools vim sg3* redhat-lsb device-mapper* lvm* unzip telnet* dstat iotop vixie-cron xterm xorg-x11-apps
+
+rpm -ivh /soft/compat-libstdc++-33-3.2.3-72.el7.x86_64.rpm
+rpm -ivh /soft/cvuqdisk-1.0.10-1.rpm
+rpm -ivh /soft/rlwrap-0.42-1.el6.x86_64.rpm
+rpm -ivh /soft/oracleasmlib-2.0.12-1.el7.x86_64.rpm
+rpm -ivh /soft/oracleasm-support-2.1.11-2.el7.x86_64.rpm
+}
+
+# ntp配置
+ntpSetup(){
+systemctl stop chronyd.service
+systemctl disable chronyd.service
+systemctl start ntpd.service
+systemctl enable ntpd.service
+systemctl start ntpd.service
+
+sed -i 's/OPTIONS/# OPTIONS/' /etc/sysconfig/ntpd
+sed -i '$a\OPTIONS="-x -u ntp:ntp -p /var/run/ntpd.pid"' /etc/sysconfig/ntpd
+
+cat >> /etc/ntp.conf <<EOF
+server $NTPSERVER prefer
+EOF
+
+systemctl stop ntpd.service
+ntpdate $NTPSERVER
+systemctl start ntpd.service
+
+hwclock --systohc
+}
+
+
+# asm磁盘配置以及空间剩余检查，如果配置失败就退出
+asmSetup()
+{
+echo "grid
+asmadmin
+y
+
+" | oracleasm configure -i
+
+oracleasm init
+
+systemctl restart oracleasm
+
+echo "n
+p
+1
+
+
+w" | fdisk /dev/sdb
+
+
+echo "n
+p
+1
+
+
+w" | fdisk /dev/sdc
+
+echo "n
+p
+1
+
+
+w" | fdisk /dev/sdd
+
+echo "n
+p
+1
+
+
+w" | fdisk /dev/sde
+
+echo "n
+p
+1
+
+
+w" | fdisk /dev/sdf
+
+oracleasm createdisk ocr01 /dev/sdb1
+oracleasm createdisk ocr02 /dev/sdc1
+oracleasm createdisk ocr03 /dev/sdd1
+oracleasm createdisk arch1 /dev/sde1
+oracleasm createdisk data1 /dev/sdf1
+
+OCR01SIZE=`fdisk -l \`oracleasm querydisk -v -p ocr01|grep dev|awk -F ':' '{print $1}'\`| grep Disk|awk -F ',' '{print $2}'|awk '{print $1}'`
+OCR02SIZE=`fdisk -l \`oracleasm querydisk -v -p ocr02|grep dev|awk -F ':' '{print $1}'\`| grep Disk|awk -F ',' '{print $2}'|awk '{print $1}'`
+OCR03SIZE=`fdisk -l \`oracleasm querydisk -v -p ocr03|grep dev|awk -F ':' '{print $1}'\`| grep Disk|awk -F ',' '{print $2}'|awk '{print $1}'`
+ARCH1SIZE=`fdisk -l \`oracleasm querydisk -v -p arch1|grep dev|awk -F ':' '{print $1}'\`| grep Disk|awk -F ',' '{print $2}'|awk '{print $1}'`
+DATA1SIZE=`fdisk -l \`oracleasm querydisk -v -p data1|grep dev|awk -F ':' '{print $1}'\`| grep Disk|awk -F ',' '{print $2}'|awk '{print $1}'`
+BASESIZE=`df -k $BASEDIR|grep dev|awk '{print $4'}`
+
+# OCR单盘至少1.5G 单位字节
+if [ $OCR01SIZE -le 1610612736 ]; then
+	echo -e "\n\e[1;31m ocr01 size is too small. \e[0m"
+	exit 1
+fi
+
+if [ $OCR02SIZE -le 1610612736 ]; then
+	echo -e "\n\e[1;31m ocr01 size is too small. \e[0m"
+	exit 1
+fi
+
+if [ $OCR03SIZE -le 1610612736 ]; then
+	echo -e "\n\e[1;31m ocr01 size is too small. \e[0m"
+	exit 1
+fi
+
+# DATA单盘至少20G 单位字节 21474836480
+if [ $DATA1SIZE -le 21474836470 ]; then
+	echo -e "\n\e[1;31m data01 size is too small. \e[0m"
+	exit 1
+fi
+
+# ARCH单盘至少10G 单位字节 10737418240
+if [ $ARCH1SIZE -le 10737418230 ]; then
+	echo -e "\n\e[1;31m arch01 size is too small. \e[0m"
+	exit 1
+fi
+
+# 安装目录剩余空间至少20G 单位k
+if [ $BASESIZE -le 20971520 ]; then
+	echo -e "\n\e[1;31m oracle base dir size is too small. \e[0m"
+	exit 1
+fi
+
+
+}
+
+# 解压相关文件
+unzipSoft(){
+chmod -R 777 /soft
+su - grid -c "source /home/grid/.bash_profile&&unzip /soft/LINUX.X64_193000_grid_home.zip -d \$ORACLE_HOME&&mv -f \$ORACLE_HOME/OPatch \$ORACLE_HOME/OPatch.bak"
+su - grid -c "source /home/grid/.bash_profile&&unzip /soft/p6880880_190000_Linux-x86-64.zip -d \$ORACLE_HOME"
+su - grid -c "unzip /soft/p30501910_190000_Linux-x86-64.zip -d /soft/"
+su - oracle -c "source /home/oracle/.bash_profile&&unzip /soft/LINUX.X64_193000_db_home.zip -d \$ORACLE_HOME&&mv \$ORACLE_HOME/OPatch  \$ORACLE_HOME/OPatch.bak"
+su - oracle -c "source /home/oracle/.bash_profile&&unzip /soft/p6880880_190000_Linux-x86-64.zip -d \$ORACLE_HOME"
+}
+
+# 配置响应文件
+setupRsp(){
+cat > /soft/grid_setup.rsp <<eof
+oracle.install.responseFileVersion=/oracle/install/rspfmt_crsinstall_response_schema_v19.0.0
+INVENTORY_LOCATION=$BASEDIR/app/oraInventory
+oracle.install.option=HA_CONFIG
+ORACLE_BASE=$BASEDIR/app/grid
+oracle.install.asm.OSDBA=oinstall
+oracle.install.asm.OSASM=asmadmin
+oracle.install.asm.SYSASMPassword=$ORACLEPASSWORD
+oracle.install.asm.diskGroup.name=OCR
+oracle.install.asm.diskGroup.redundancy=NORMAL
+oracle.install.asm.diskGroup.AUSize=4
+oracle.install.asm.diskGroup.disksWithFailureGroupNames=/dev/oracleasm/disks/OCR01,,/dev/oracleasm/disks/OCR02,,/dev/oracleasm/disks/OCR03,
+oracle.install.asm.diskGroup.disks=/dev/oracleasm/disks/OCR01,/dev/oracleasm/disks/OCR02,/dev/oracleasm/disks/OCR03
+oracle.install.asm.diskGroup.diskDiscoveryString=/dev/oracleasm/disks/
+oracle.install.asm.monitorPassword=$ORACLEPASSWORD
+eof
+
+cat >/soft/oracle_setup.rsp<<eof
+oracle.install.responseFileVersion=/oracle/install/rspfmt_dbinstall_response_schema_v19.0.0
+oracle.install.option=INSTALL_DB_SWONLY
+UNIX_GROUP_NAME=oinstall
+INVENTORY_LOCATION=$BASEDIR/app/oraInventory
+ORACLE_BASE=$BASEDIR/app/oracle
+oracle.install.db.InstallEdition=EE
+oracle.install.db.OSDBA_GROUP=dba
+oracle.install.db.OSOPER_GROUP=oper
+oracle.install.db.OSBACKUPDBA_GROUP=dba
+oracle.install.db.OSDGDBA_GROUP=dba
+oracle.install.db.OSKMDBA_GROUP=dba
+oracle.install.db.OSRACDBA_GROUP=dba
+oracle.install.db.rootconfig.executeRootScript=false
+oracle.install.db.config.starterdb.type=GENERAL_PURPOSE
+oracle.install.db.ConfigureAsContainerDB=false
+oracle.install.db.config.starterdb.memoryOption=false
+oracle.install.db.config.starterdb.installExampleSchemas=false
+oracle.install.db.config.starterdb.managementOption=DEFAULT
+oracle.install.db.config.starterdb.omsPort=0
+oracle.install.db.config.starterdb.enableRecovery=false
+eof
+
+cat >/soft/nonpdb.dbt <<eof
+<?xml version = '1.0'?>
+<DatabaseTemplate name="nonpdb.dbt" description="" version="19.0.0.0.0">
+   <CommonAttributes>
+      <option name="OMS" value="true" includeInPDBs="true"/>
+      <option name="JSERVER" value="true" includeInPDBs="true"/>
+      <option name="SPATIAL" value="true" includeInPDBs="true"/>
+      <option name="IMEDIA" value="true" includeInPDBs="true"/>
+      <option name="ORACLE_TEXT" value="true" includeInPDBs="true">
+         <tablespace id="SYSAUX"/>
+      </option>
+      <option name="SAMPLE_SCHEMA" value="false" includeInPDBs="false"/>
+      <option name="CWMLITE" value="true" includeInPDBs="true">
+         <tablespace id="SYSAUX"/>
+      </option>
+      <option name="APEX" value="false" includeInPDBs="false"/>
+      <option name="DV" value="true" includeInPDBs="true"/>
+   </CommonAttributes>
+   <Variables/>
+   <CustomScripts Execute="false"/>
+   <InitParamAttributes>
+      <InitParams>
+         <initParam name="db_create_file_dest" value="+DATA"/>
+         <initParam name="db_name" value="${DB_NAME}"/>
+         <initParam name="dispatchers" value="(PROTOCOL=TCP) (SERVICE=${DB_NAME}XDB)"/>
+         <initParam name="audit_file_dest" value="${BASEDIR}/app/oracle/admin/${DB_NAME}/adump"/>
+         <initParam name="compatible" value="19.0.0"/>
+         <initParam name="remote_login_passwordfile" value="EXCLUSIVE"/>
+         <initParam name="log_archive_dest_1" value="'LOCATION=+ARCH'"/>
+         <initParam name="sga_target" value="${SGA_SIZE}" unit="MB"/>
+         <initParam name="processes" value="3000"/>
+         <initParam name="local_listener" value="LISTENER_${DB_NAME}"/>
+         <initParam name="undo_tablespace" value="UNDOTBS1"/>
+         <initParam name="diagnostic_dest" value="${BASEDIR}/app/oracle"/>
+         <initParam name="audit_trail" value="db"/>
+         <initParam name="log_archive_format" value="%t_%s_%r.dbf"/>
+         <initParam name="nls_territory" value="AMERICA"/>
+         <initParam name="db_block_size" value="8192"/>
+         <initParam name="open_cursors" value="300"/>
+         <initParam name="nls_language" value="AMERICAN"/>
+         <initParam name="pga_aggregate_target" value="${PGA_SIZE}" unit="MB"/>
+      </InitParams>
+      <MiscParams>
+         <databaseType>MULTIPURPOSE</databaseType>
+         <maxUserConn>20</maxUserConn>
+         <percentageMemTOSGA>40</percentageMemTOSGA>
+         <customSGA>false</customSGA>
+         <dataVaultEnabled>false</dataVaultEnabled>
+         <characterSet>$CHARACTERSET</characterSet>
+         <nationalCharacterSet>AL16UTF16</nationalCharacterSet>
+         <archiveLogMode>true</archiveLogMode>
+         <initParamFileName>{ORACLE_BASE}/admin/{DB_UNIQUE_NAME}/pfile/init.ora</initParamFileName>
+      </MiscParams>
+      <SPfile useSPFile="true">+DATA/${DB_NAME}/spfile${DB_NAME}.ora</SPfile>
+   </InitParamAttributes>
+   <StorageAttributes>
+      <DataFiles>
+         <Location>{ORACLE_HOME}/assistants/dbca/templates/Seed_Database.dfb</Location>
+         <SourceDBName cdb="true">seeddata</SourceDBName>
+         <Name id="3" Tablespace="SYSAUX" Contents="PERMANENT" Size="400" autoextend="true" blocksize="8192" con_id="1">+DATA/${DB_NAME}/sysaux01.dbf</Name>
+         <Name id="1" Tablespace="SYSTEM" Contents="PERMANENT" Size="880" autoextend="true" blocksize="8192" con_id="1">+DATA/${DB_NAME}/system01.dbf</Name>
+         <Name id="4" Tablespace="UNDOTBS1" Contents="UNDO" Size="25" autoextend="true" blocksize="8192" con_id="1">+DATA/${DB_NAME}/undotbs01.dbf</Name>
+         <Name id="7" Tablespace="USERS" Contents="PERMANENT" Size="5" autoextend="true" blocksize="8192" con_id="1">+DATA/${DB_NAME}/users01.dbf</Name>
+      </DataFiles>
+      <TempFiles>
+         <Name id="1" Tablespace="TEMP" Contents="TEMPORARY" Size="20" con_id="1">+DATA/${DB_NAME}/temp01.dbf</Name>
+      </TempFiles>
+      <ControlfileAttributes id="Controlfile">
+         <maxDatafiles>2000</maxDatafiles>
+         <maxLogfiles>16</maxLogfiles>
+         <maxLogMembers>3</maxLogMembers>
+         <maxLogHistory>1</maxLogHistory>
+         <maxInstances>8</maxInstances>
+         <image name="control01.ctl" filepath="+DATA/${DB_NAME}/"/>
+         <image name="control02.ctl" filepath="+DATA/${DB_NAME}/"/>
+      </ControlfileAttributes>
+      <RedoLogGroupAttributes id="1">
+         <reuse>false</reuse>
+         <fileSize unit="KB">1048576</fileSize>
+         <Thread>1</Thread>
+         <member ordinal="0" memberName="redo01.log" filepath="+DATA/${DB_NAME}/"/>
+      </RedoLogGroupAttributes>
+      <RedoLogGroupAttributes id="2">
+         <reuse>false</reuse>
+         <fileSize unit="KB">1048576</fileSize>
+         <Thread>1</Thread>
+         <member ordinal="0" memberName="redo02.log" filepath="+DATA/${DB_NAME}/"/>
+      </RedoLogGroupAttributes>
+      <RedoLogGroupAttributes id="3">
+         <reuse>false</reuse>
+         <fileSize unit="KB">1048576</fileSize>
+         <Thread>1</Thread>
+         <member ordinal="0" memberName="redo03.log" filepath="+DATA/${DB_NAME}/"/>
+      </RedoLogGroupAttributes>
+      <RedoLogGroupAttributes id="4">
+         <reuse>false</reuse>
+         <fileSize unit="KB">1048576</fileSize>
+         <Thread>1</Thread>
+         <member ordinal="0" memberName="" filepath=""/>
+      </RedoLogGroupAttributes>
+      <RedoLogGroupAttributes id="5">
+         <reuse>false</reuse>
+         <fileSize unit="KB">1048576</fileSize>
+         <Thread>1</Thread>
+         <member ordinal="0" memberName="" filepath=""/>
+      </RedoLogGroupAttributes>
+   </StorageAttributes>
+</DatabaseTemplate>
+eof
+
+cat >/soft/dbca_nonpdb.rsp <<eof
+responseFileVersion=/oracle/assistants/rspfmt_dbca_response_schema_v12.2.0<<eof
+gdbName=${DB_NAME}
+sid=${DB_NAME}
+databaseConfigType=SI
+policyManaged=false
+createServerPool=false
+force=false
+createAsContainerDatabase=false
+numberOfPDBs=0
+useLocalUndoForPDBs=true
+templateName=/soft/nonpdb.dbt
+sysPassword=$ORACLEPASSWORD
+systemPassword=$ORACLEPASSWORD
+emExpressPort=5500
+runCVUChecks=FALSE
+omsPort=0
+dvConfiguration=false
+olsConfiguration=false
+datafileJarLocation={ORACLE_HOME}/assistants/dbca/templates/
+datafileDestination=+DATA/{DB_UNIQUE_NAME}/
+storageType=ASM
+diskGroupName=+DATA/{DB_UNIQUE_NAME}/
+characterSet=$CHARACTERSET
+nationalCharacterSet=AL16UTF16
+registerWithDirService=false
+listeners=LISTENER
+variables=ORACLE_BASE_HOME=$BASEDIR/app/oracle/product/19.0/db_1,DB_UNIQUE_NAME=${DB_NAME},ORACLE_BASE=$BASEDIR/app/oracle,PDB_NAME=,DB_NAME=${DB_NAME},ORACLE_HOME=$BASEDIR/app/oracle/product/19.0/db_1,SID=${DB_NAME}
+initParams=undo_tablespace=UNDOTBS1,sga_target=${SGA_SIZE}MB,db_block_size=8192BYTES,log_archive_dest_1='LOCATION=+ARCH',nls_language=AMERICAN,dispatchers=(PROTOCOL=TCP) (SERVICE=${DB_NAME}XDB),diagnostic_dest={ORACLE_BASE},remote_login_passwordfile=EXCLUSIVE,db_create_file_dest=+DATA/{DB_UNIQUE_NAME}/,audit_file_dest={ORACLE_BASE}/admin/{DB_UNIQUE_NAME}/adump,processes=3000,pga_aggregate_target=${PGA_SIZE}MB,nls_territory=AMERICA,local_listener=LISTENER_${DB_NAME},open_cursors=300,log_archive_format=%t_%s_%r.dbf,compatible=19.0.0,db_name=${DB_NAME},audit_trail=db
+sampleSchema=false
+memoryPercentage=40
+databaseType=MULTIPURPOSE
+automaticMemoryManagement=false
+eof
+
+cat >/soft/pdb.dbt <<eof
+<?xml version = '1.0'?>
+<DatabaseTemplate name="dbcapdb" description="" version="19.0.0.0.0">
+   <CommonAttributes>
+      <option name="OMS" value="true" includeInPDBs="true"/>
+      <option name="JSERVER" value="true" includeInPDBs="true"/>
+      <option name="SPATIAL" value="true" includeInPDBs="true"/>
+      <option name="IMEDIA" value="true" includeInPDBs="true"/>
+      <option name="ORACLE_TEXT" value="true" includeInPDBs="true">
+         <tablespace id="SYSAUX"/>
+      </option>
+      <option name="SAMPLE_SCHEMA" value="false" includeInPDBs="false"/>
+      <option name="CWMLITE" value="true" includeInPDBs="true">
+         <tablespace id="SYSAUX"/>
+      </option>
+      <option name="APEX" value="false" includeInPDBs="false"/>
+      <option name="DV" value="true" includeInPDBs="true"/>
+   </CommonAttributes>
+   <Variables/>
+   <CustomScripts Execute="false"/>
+   <InitParamAttributes>
+      <InitParams>
+         <initParam name="db_create_file_dest" value="+DATA"/>
+         <initParam name="db_name" value="${DB_NAME}"/>
+         <initParam name="dispatchers" value="(PROTOCOL=TCP) (SERVICE=${DB_NAME}XDB)"/>
+         <initParam name="audit_file_dest" value="${BASEDIR}/app/oracle/admin/${DB_NAME}/adump"/>
+         <initParam name="compatible" value="19.0.0"/>
+         <initParam name="remote_login_passwordfile" value="EXCLUSIVE"/>
+         <initParam name="log_archive_dest_1" value="'LOCATION=+ARCH'"/>
+         <initParam name="sga_target" value="${SGA_SIZE}" unit="MB"/>
+         <initParam name="processes" value="3000"/>
+         <initParam name="local_listener" value="LISTENER_${DB_NAME}"/>
+         <initParam name="undo_tablespace" value="UNDOTBS1"/>
+         <initParam name="diagnostic_dest" value="${BASEDIR}/app/oracle"/>
+         <initParam name="audit_trail" value="db"/>
+         <initParam name="log_archive_format" value="%t_%s_%r.dbf"/>
+         <initParam name="nls_territory" value="AMERICA"/>
+         <initParam name="db_block_size" value="8192"/>
+         <initParam name="open_cursors" value="300"/>
+         <initParam name="nls_language" value="AMERICAN"/>
+         <initParam name="pga_aggregate_target" value="${PGA_SIZE}" unit="MB"/>
+      </InitParams>
+      <MiscParams>
+         <databaseType>MULTIPURPOSE</databaseType>
+         <maxUserConn>20</maxUserConn>
+         <percentageMemTOSGA>40</percentageMemTOSGA>
+         <customSGA>false</customSGA>
+         <dataVaultEnabled>false</dataVaultEnabled>
+         <characterSet>$CHARACTERSET</characterSet>
+         <nationalCharacterSet>AL16UTF16</nationalCharacterSet>
+         <archiveLogMode>true</archiveLogMode>
+         <initParamFileName>{ORACLE_BASE}/admin/{DB_UNIQUE_NAME}/pfile/init.ora</initParamFileName>
+      </MiscParams>
+      <SPfile useSPFile="true">+DATA/${DB_NAME}/spfile${DB_NAME}.ora</SPfile>
+   </InitParamAttributes>
+   <StorageAttributes>
+      <DataFiles>
+         <Location>{ORACLE_HOME}/assistants/dbca/templates/Seed_Database.dfb</Location>
+         <SourceDBName cdb="true">seeddata</SourceDBName>
+         <Name id="3" Tablespace="SYSAUX" Contents="PERMANENT" Size="400" autoextend="true" blocksize="8192" con_id="1">+DATA/${DB_NAME}/sysaux01.dbf</Name>
+         <Name id="1" Tablespace="SYSTEM" Contents="PERMANENT" Size="880" autoextend="true" blocksize="8192" con_id="1">+DATA/${DB_NAME}/system01.dbf</Name>
+         <Name id="4" Tablespace="UNDOTBS1" Contents="UNDO" Size="25" autoextend="true" blocksize="8192" con_id="1">+DATA/${DB_NAME}/undotbs01.dbf</Name>
+         <Name id="7" Tablespace="USERS" Contents="PERMANENT" Size="5" autoextend="true" blocksize="8192" con_id="1">+DATA/${DB_NAME}/users01.dbf</Name>
+      </DataFiles>
+      <TempFiles>
+         <Name id="1" Tablespace="TEMP" Contents="TEMPORARY" Size="20" con_id="1">+DATA/${DB_NAME}/temp01.dbf</Name>
+      </TempFiles>
+      <ControlfileAttributes id="Controlfile">
+         <maxDatafiles>1024</maxDatafiles>
+         <maxLogfiles>16</maxLogfiles>
+         <maxLogMembers>3</maxLogMembers>
+         <maxLogHistory>1</maxLogHistory>
+         <maxInstances>8</maxInstances>
+         <image name="control01.ctl" filepath="+DATA/${DB_NAME}/"/>
+         <image name="control02.ctl" filepath="+DATA/${DB_NAME}/"/>
+      </ControlfileAttributes>
+      <RedoLogGroupAttributes id="1">
+         <reuse>false</reuse>
+         <fileSize unit="KB">1048576</fileSize>
+         <Thread>1</Thread>
+         <member ordinal="0" memberName="redo01.log" filepath="+DATA/${DB_NAME}/"/>
+      </RedoLogGroupAttributes>
+      <RedoLogGroupAttributes id="2">
+         <reuse>false</reuse>
+         <fileSize unit="KB">1048576</fileSize>
+         <Thread>1</Thread>
+         <member ordinal="0" memberName="redo02.log" filepath="+DATA/${DB_NAME}/"/>
+      </RedoLogGroupAttributes>
+      <RedoLogGroupAttributes id="3">
+         <reuse>false</reuse>
+         <fileSize unit="KB">1048576</fileSize>
+         <Thread>1</Thread>
+         <member ordinal="0" memberName="redo03.log" filepath="+DATA/${DB_NAME}/"/>
+      </RedoLogGroupAttributes>
+      <RedoLogGroupAttributes id="4">
+         <reuse>false</reuse>
+         <fileSize unit="KB">1048576</fileSize>
+         <Thread>1</Thread>
+         <member ordinal="0" memberName="" filepath=""/>
+      </RedoLogGroupAttributes>
+      <RedoLogGroupAttributes id="5">
+         <reuse>false</reuse>
+         <fileSize unit="KB">1048576</fileSize>
+         <Thread>1</Thread>
+         <member ordinal="0" memberName="" filepath=""/>
+      </RedoLogGroupAttributes>
+   </StorageAttributes>
+</DatabaseTemplate>
+eof
+
+cat >/soft/dbca_pdb.rsp <<eof
+responseFileVersion=/oracle/assistants/rspfmt_dbca_response_schema_v12.2.0
+gdbName=${DB_NAME}
+sid=${DB_NAME}
+databaseConfigType=SI
+policyManaged=false
+createServerPool=false
+force=false
+createAsContainerDatabase=true
+numberOfPDBs=1
+pdbName=${DB_NAME}pdb
+useLocalUndoForPDBs=true
+templateName=/soft/nonpdb.dbt
+sysPassword=$ORACLEPASSWORD
+systemPassword=$ORACLEPASSWORD
+pdbAdminPassword=$ORACLEPASSWORD
+emExpressPort=5500
+runCVUChecks=FALSE
+omsPort=0
+dvConfiguration=false
+olsConfiguration=false
+datafileJarLocation={ORACLE_HOME}/assistants/dbca/templates/
+datafileDestination=+DATA/{DB_UNIQUE_NAME}/
+storageType=ASM
+diskGroupName=+DATA/{DB_UNIQUE_NAME}/
+characterSet=$CHARACTERSET
+nationalCharacterSet=AL16UTF16
+registerWithDirService=false
+listeners=LISTENER
+variables=ORACLE_BASE_HOME=$BASEDIR/app/oracle/product/19.0/db_1,DB_UNIQUE_NAME=${DB_NAME},ORACLE_BASE=$BASEDIR/app/oracle,PDB_NAME=,DB_NAME=${DB_NAME},ORACLE_HOME=$BASEDIR/app/oracle/product/19.0/db_1,SID=${DB_NAME}
+initParams=undo_tablespace=UNDOTBS1,sga_target=${SGA_SIZE}MB,db_block_size=8192BYTES,log_archive_dest_1='LOCATION=+ARCH',nls_language=AMERICAN,dispatchers=(PROTOCOL=TCP) (SERVICE=${DB_NAME}XDB),diagnostic_dest={ORACLE_BASE},remote_login_passwordfile=EXCLUSIVE,db_create_file_dest=+DATA/{DB_UNIQUE_NAME}/,audit_file_dest={ORACLE_BASE}/admin/{DB_UNIQUE_NAME}/adump,processes=3000,pga_aggregate_target=$(PGA_SIZE)MB,nls_territory=AMERICA,local_listener=LISTENER_${DB_NAME},open_cursors=300,log_archive_format=%t_%s_%r.dbf,compatible=19.0.0,db_name=${DB_NAME},audit_trail=db
+sampleSchema=false
+memoryPercentage=40
+databaseType=MULTIPURPOSE
+automaticMemoryManagement=false
+totalMemory=0
+eof
+}
+
+
+# 安装grid
+grid(){
+su - grid -c "${BASEDIR}/app/19.0/grid/gridSetup.sh -applyRU /soft/30501910 -silent -responseFile /soft/grid_setup.rsp -ignorePrereqFailure"
+
+${BASEDIR}/app/oraInventory/orainstRoot.sh
+${BASEDIR}/app/19.0/grid/root.sh
+su - grid -c "${BASEDIR}/app/19.0/grid/gridSetup.sh -executeConfigTools -responseFile /soft/grid_setup.rsp -silent"
+
+su - grid -c "asmca -silent -createDiskGroup -diskGroupName DATA -disk /dev/oracleasm/disks/DATA1 -redundancy EXTERNAL"
+su - grid -c "asmca -silent -createDiskGroup -diskGroupName ARCH -disk /dev/oracleasm/disks/ARCH1 -redundancy EXTERNAL"
+}
+
+# 安装oracle
+oracle(){
+su - oracle -c "${BASEDIR}/app/oracle/product/19.0/db_1/runInstaller -applyRU /soft/30501910 -silent -responseFile /soft/oracle_setup.rsp -ignorePrereqFailure"
+${BASEDIR}/app/oracle/product/19.0/db_1/root.sh
+}
+
+# 创建数据库
+dbca(){
+if [ $PDBMODE ]; then
+    su - oracle -c"dbca -silent -createDatabase -responseFile /soft/dbca_pdb.rsp -ignorePreReqs"
+else
+    su - oracle -c"dbca -silent -createDatabase -responseFile /soft/dbca_nonpdb.rsp -ignorePreReqs"
+fi
+}
+
+# 初始化数据库等相关参数
+initParam(){
+cat >>${BASEDIR}/app/19.0/grid/network/admin/sqlnet.ora<<EOF
+sqlnet.expire_time=1
+SQLNET.ALLOWED_LOGON_VERSION_SERVER=10
+SQLNET.ALLOWED_LOGON_VERSION_CLIENT=10
+EOF
+chown grid:oinstall ${BASEDIR}/app/19.0/grid/network/admin/sqlnet.ora
+
+cat >> ${BASEDIR}/app/oracle/product/19.0/db_1/network/admin/sqlnet.ora <<EOF
+sqlnet.expire_time=1
+SQLNET.ALLOWED_LOGON_VERSION_SERVER=10
+SQLNET.ALLOWED_LOGON_VERSION_CLIENT=10
+EOF
+chown oracle:oinstall ${BASEDIR}/app/oracle/product/19.0/db_1/network/admin/sqlnet.ora 
+
+cat > /soft/oracle_init.sh << EOFEOF
+su - grid -c "sqlplus / as sysasm <<eof
+alter system set large_pool_size=512M scope=spfile sid='*';
+alter system set sga_target=2048M scope=spfile sid='*'; 
+alter system set pga_aggregate_target=1024M scope=spfile sid='*';
+alter system set memory_target=0 scope=spfile sid='*';
+alter system set memory_max_target=0 scope=spfile sid='*'; 
+alter system reset memory_max_target scope=spfile sid='*';
+eof"
+
+cat > /soft/init.sql << eof
+alter system set db_cache_size=${DB_CACHE_SIZE}M;
+alter system set shared_pool_size=${SP_SIZE}M;
+alter system set "_memory_imm_mode_without_autosga"=FALSE;
+alter system set fast_start_parallel_rollback=low;
+alter system set recovery_parallelism=10 scope=spfile;
+alter system set "_cleanup_rollback_entries"=10000 scope=spfile;
+alter system set "_datafile_write_errors_crash_instance"=false scope=spfile;
+alter system set result_cache_max_size=0 scope=spfile sid='*';
+alter system set "_sys_logon_delay"=0 scope=spfile; 
+alter system set "_use_single_log_writer" = TRUE scope=spfile sid='*';
+alter system set "_max_outstanding_log_writes"=1 scope=spfile sid='*';
+alter system set parallel_max_servers=128 scope=spfile sid='*';
+alter system set "_rollback_segment_count"=2000 scope=spfile sid='*';
+alter system set "_lm_res_hash_bucket"=4194250 scope=spfile;
+alter system set "_column_tracking_level"=17 scope=both;
+alter system set optimizer_secure_view_merging=false;
+alter system set "_optimizer_use_auto_indexes"=OFF scope=spfile;
+alter profile default limit PASSWORD_LIFE_TIME unlimited;
+alter profile default limit PASSWORD_LOCK_TIME unlimited;
+alter profile default limit PASSWORD_GRACE_TIME unlimited;
+alter system set parallel_force_local=true scope=spfile sid='*';
+alter system set max_dump_file_size='4096M' scope=spfile sid='*';
+alter system set "_partition_large_extents"=false scope=spfile sid='*';
+alter system set "_undo_autotune"=false scope=spfile sid='*';
+alter system set undo_retention=10800 scope=spfile sid='*';
+alter system set parallel_max_servers=128 scope=spfile sid='*';
+alter system set control_file_record_keep_time=31 scope=spfile sid='*';
+alter system set "_gc_policy_time"=0 scope=spfile sid='*';
+alter system set "_gc_undo_affinity"=false scope=spfile sid='*';
+alter system set deferred_segment_creation=false scope=spfile sid='*';
+alter system set result_cache_max_size=0 scope=spfile sid='*';
+alter system set "_gc_defer_time"=3 scope=spfile sid='*';
+noaudit create session; 
+exec DBMS_WORKLOAD_REPOSITORY.MODIFY_SNAPSHOT_SETTINGS(RETENTION=>21600,INTERVAL=>30);
+alter system set "_optimizer_adaptive_cursor_sharing"=false sid='*' scope=spfile;
+alter system set "_optimizer_extended_cursor_sharing"=none sid='*' scope=spfile;
+alter system set "_optimizer_extended_cursor_sharing_rel"=none sid='*' scope=spfile;
+alter system set "_optimizer_use_feedback"=false sid ='*' scope=spfile;
+alter system set event='28401 trace name context forever,level 1','10949 trace name context forever,level 1' sid='*' scope=spfile;
+alter system set "_px_use_large_pool"=true  sid ='*' scope=spfile;
+alter system set "_use_adaptive_log_file_sync"=false sid='*' scope=spfile;
+alter system set db_files=2000 scope=spfile sid='*';
+exec dbms_auto_task_admin.disable(client_name => 'sql tuning advisor',operation => NULL,window_name => NULL);
+exec dbms_auto_task_admin.disable(client_name => 'auto space advisor',operation => NULL,window_name => NULL);
+DECLARE
+filter1 CLOB;
+BEGIN
+filter1 := DBMS_STATS.CONFIGURE_ADVISOR_RULE_FILTER('AUTO_STATS_ADVISOR_TASK','EXECUTE',NULL,'DISABLE');
+END;
+/
+eof
+
+su - oracle -c "rman target / << eof
+configure retention policy to recovery window of 30 days;
+configure controlfile autobackup on;
+configure snapshot controlfile name to '+DATA/snapcf_${DB_NAME}.f';	
+exit
+eof
+
+sqlplus /nolog << eof
+conn / as sysdba
+@/soft/init.sql
+eof"
+EOFEOF
+
+sh /soft/oracle_init.sh
+}
+
+
+# 开始执行
+checkIP
+isRoot
+checkFile
+mountCdrom
+checkUserinfo
+serviceCheck
+rpmInstall
+ntpSetup
+asmSetup
+unzipSoft
+setupRsp
+grid
+oracle
+dbca
+initParam
+
+
+# grid path into root path
+# sed -i 's/bin/bin:\${BASEDIR}\/app\/19.0\/grid\/bin/' /root/.bash_profile
+# sh -x install.sh>install.log 2>error.log
