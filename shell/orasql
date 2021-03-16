@@ -120,7 +120,6 @@ $SQLPLUS -s /nolog<<EOF
 exit;
 EOF
 ;;
-;;
 
 alert)
 $SQLPLUS -s /nolog<<EOF
