@@ -44,6 +44,7 @@ echo "access        obj_name [owner]           : show who is access thie object"
 echo "ash                                      : exp ash information"
 echo "awrsnap                                  : create an awr snapshot manually"
 echo "bind          sqlid                      : get bind value by sqlid"
+echo "cursorplan                               : show plan in cursor"
 echo "datafile                                 : show datafile information"
 echo "dblink                                   : show dblink information"
 echo "degree                                   : show obj degree > 1"
@@ -987,6 +988,18 @@ select DB_LINK,LOGGED_ON,OPEN_CURSORS,IN_TRANSACTION,UPDATE_SENT,COMMIT_POINT_ST
 exit;
 EOF
 ;;
+
+cursorplan)
+$SQLPLUS -s /nolog<<EOF
+ $LOGIN;
+ set line 200 pages 2000
+ col child_number1 new_value child_number noprint
+alter session set cursor_sharing=force;
+select * from table(dbms_xplan.display_cursor(nvl('$2','xxxx'),null));
+exit;
+EOF
+;;
+
 
 datafile)
 $SQLPLUS -s /nolog<<EOF
