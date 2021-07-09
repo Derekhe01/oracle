@@ -28,9 +28,6 @@ print_copyright()
 echo
 echo "==========================================="
 echo "orasql    :  query tool for oracle dba"
-echo "version   :  1.0 update201901"
-echo "author    :  Roger He (CES)"
-echo "email     :  he0130@126.com"
 echo "==========================================="
 }
 print_usage()
