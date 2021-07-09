@@ -40,6 +40,7 @@ echo "Usage     :  orasql kyeword [arg1][arg2][...]"
 echo "-----------------------------------------------------------------------------"
 echo "keyword        args                        desc"
 echo "============= ========================= ====================================="
+echo "actid                                    : show active session information"
 echo "15event                                  : show last 15 minutes wait event"
 echo "alert                                    : show last 15 minutes ORA error version > 11g"
 echo "access        obj_name [owner]           : show who is access thie object"
@@ -117,6 +118,43 @@ $SQLPLUS -s /nolog<<EOF
  from v\$sqltext_with_newlines st,v\$session s
  where st.address=s.sql_address and s.sid=$SID
  order by st.piece;
+exit;
+EOF
+;;
+
+actid)
+$SQLPLUS -s /nolog<<EOF
+ $LOGIN;
+ set line 200 pages 2000
+set line 150
+set pages 150
+col sid for 999
+col spid for a10
+col s# for 99999
+col username for a13
+col event for a30
+col machine for a20
+col p123 for a22
+col wt for 999
+alter session set cursor_sharing=force;
+
+select /*+ rule */
+ s.SID,
+ s.SERIAL# s#,
+ p.SPID,
+ nvl(s.USERNAME, substr(p.PROGRAM, length(p.PROGRAM) - 6)) USERNAME,
+ s.machine,
+ w.EVENT,
+ w.p1 || '/' || w.P2 || '/' || w.P3 p123,
+ w.WAIT_TIME wt,
+ nvl(sql_id, prev_sql_id) sql_id
+  from v\$process p, v\$session s, v\$session_wait w
+ where p.ADDR = s.PADDR
+   and s.sid = w.SID
+   and s.STATUS = 'ACTIVE'
+   AND P.BACKGROUND IS NULL
+   and w.EVENT not like 'parallel recovery%'
+   and s.USERNAME <> 'PUBLIC';
 exit;
 EOF
 ;;
